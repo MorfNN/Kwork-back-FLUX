@@ -1,0 +1,59 @@
+stages:
+  - lint
+  - test
+  - build
+  - deploy_test
+  - deploy_prod
+
+variables:
+  DOCKER_IMAGE: $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
+
+lint:
+  stage: lint
+  image: python:3.11-slim
+  script:
+    - pip install ruff black
+    - ruff check app/
+    - black --check app/
+
+test:
+  stage: test
+  image: python:3.11-slim
+  services:
+    - postgres:15-alpine
+    - redis:7-alpine
+  variables:
+    POSTGRES_DB: test_db
+    POSTGRES_USER: user
+    POSTGRES_PASSWORD: password
+    DATABASE_URL: postgresql+asyncpg://user:password@postgres:5432/test_db
+  script:
+    - pip install -r requirements.txt
+    - pip install pytest pytest-asyncio httpx
+    - pytest tests/
+
+build:
+  stage: build
+  image: docker:20.10.16
+  services:
+    - docker:20.10.16-dind
+  script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    - docker build -t $DOCKER_IMAGE .
+    - docker push $DOCKER_IMAGE
+
+deploy_test:
+  stage: deploy_test
+  script:
+    - echo "Deploying to Test..."
+    # Add SSH commands to pull and restart docker-compose
+  only:
+    - develop
+
+deploy_prod:
+  stage: deploy_prod
+  script:
+    - echo "Deploying to Prod..."
+  when: manual
+  only:
+    - tags
